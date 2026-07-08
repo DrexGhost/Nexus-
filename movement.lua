@@ -1,569 +1,389 @@
 return function(shared)
     local player = shared.player
-    local gui = shared.gui
     local settings = shared.settings
     local saveSetting = shared.saveSetting
-    local colors = shared.colors
     local createToggle = shared.createToggle
     local createSlider = shared.createSlider
     local UIS = game:GetService("UserInputService")
     local runService = game:GetService("RunService")
-    local tweenService = game:GetService("TweenService")
     
-    local content = shared.contents["RENDER"]
+    local content = shared.contents["MOVEMENT"]
     
-    local fullbrightEnabled = settings.fullbright
-    local fullbrightConnection = nil
+    local flyEnabled = settings.fly
+    local flyConnection = nil
+    local mobileFlyGui = nil
+    local mobileInput = {forward = false, back = false, left = false, right = false, up = false, down = false}
     
-    createToggle(content, "Fullbright", 15, settings.fullbright, function(enabled)
-        fullbrightEnabled = enabled
+    local function createMobileFlyUI()
+        if mobileFlyGui then mobileFlyGui:Destroy() end
+        mobileFlyGui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
+        mobileFlyGui.Name = "DeltaMobileFly"
+        mobileFlyGui.ResetOnSpawn = false
+        mobileFlyGui.Enabled = false
+        
+        local moveFrame = Instance.new("Frame", mobileFlyGui)
+        moveFrame.Size = UDim2.new(0, 150, 0, 150)
+        moveFrame.Position = UDim2.new(0, 20, 0.7, -75)
+        moveFrame.BackgroundTransparency = 1
+        
+        local btnSize = 50
+        
+        local function createBtn(name, posX, posY, xDir, yDir)
+            local btn = Instance.new("TextButton", moveFrame)
+            btn.Size = UDim2.new(0, btnSize, 0, btnSize)
+            btn.Position = UDim2.new(0, posX, 0, posY)
+            btn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+            btn.BackgroundTransparency = 0.5
+            btn.BorderSizePixel = 0
+            btn.Text = name
+            btn.TextColor3 = shared.colors.text
+            btn.TextSize = 20
+            btn.Font = Enum.Font.GothamBold
+            Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+            
+            btn.InputBegan:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.Touch then
+                    if xDir == 1 then mobileInput.right = true
+                    elseif xDir == -1 then mobileInput.left = true
+                    elseif yDir == 1 then mobileInput.forward = true
+                    elseif yDir == -1 then mobileInput.back = true
+                    end
+                end
+            end)
+            btn.InputEnded:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.Touch then
+                    if xDir == 1 then mobileInput.right = false
+                    elseif xDir == -1 then mobileInput.left = false
+                    elseif yDir == 1 then mobileInput.forward = false
+                    elseif yDir == -1 then mobileInput.back = false
+                    end
+                end
+            end)
+            return btn
+        end
+        
+        createBtn("W", 50, 0, 0, 1)
+        createBtn("S", 50, 100, 0, -1)
+        createBtn("A", 0, 50, -1, 0)
+        createBtn("D", 100, 50, 1, 0)
+        
+        local upBtn = Instance.new("TextButton", mobileFlyGui)
+        upBtn.Size = UDim2.new(0, 60, 0, 60)
+        upBtn.Position = UDim2.new(1, -80, 0.7, -80)
+        upBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        upBtn.BackgroundTransparency = 0.5
+        upBtn.BorderSizePixel = 0
+        upBtn.Text = "▲"
+        upBtn.TextColor3 = shared.colors.text
+        upBtn.TextSize = 24
+        upBtn.Font = Enum.Font.GothamBold
+        Instance.new("UICorner", upBtn).CornerRadius = UDim.new(0, 8)
+        
+        local downBtn = Instance.new("TextButton", mobileFlyGui)
+        downBtn.Size = UDim2.new(0, 60, 0, 60)
+        downBtn.Position = UDim2.new(1, -80, 0.7, 0)
+        downBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        downBtn.BackgroundTransparency = 0.5
+        downBtn.BorderSizePixel = 0
+        downBtn.Text = "▼"
+        downBtn.TextColor3 = shared.colors.text
+        downBtn.TextSize = 24
+        downBtn.Font = Enum.Font.GothamBold
+        Instance.new("UICorner", downBtn).CornerRadius = UDim.new(0, 8)
+        
+        upBtn.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Touch then mobileInput.up = true end
+        end)
+        upBtn.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Touch then mobileInput.up = false end
+        end)
+        downBtn.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Touch then mobileInput.down = true end
+        end)
+        downBtn.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Touch then mobileInput.down = false end
+        end)
+    end
+    
+    local function setupFly(character)
+        if not character or not character:FindFirstChild("HumanoidRootPart") then return end
+        local root = character.HumanoidRootPart
+        
+        local bodyGyro = root:FindFirstChild("FlyGyro")
+        if not bodyGyro then
+            bodyGyro = Instance.new("BodyGyro")
+            bodyGyro.Name = "FlyGyro"
+            bodyGyro.MaxTorque = Vector3.new(400000, 400000, 400000)
+            bodyGyro.Parent = root
+        end
+        
+        local bodyVelocity = root:FindFirstChild("FlyVelocity")
+        if not bodyVelocity then
+            bodyVelocity = Instance.new("BodyVelocity")
+            bodyVelocity.Name = "FlyVelocity"
+            bodyVelocity.MaxForce = Vector3.new(400000, 400000, 400000)
+            bodyVelocity.Parent = root
+        end
+        
+        bodyGyro.CFrame = workspace.CurrentCamera.CFrame
+        bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+        return bodyGyro, bodyVelocity
+    end
+    
+    local function cleanupFly()
+        if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            local root = player.Character.HumanoidRootPart
+            for _, v in pairs(root:GetChildren()) do
+                if v:IsA("BodyVelocity") and v.Name == "FlyVelocity" then v:Destroy() end
+                if v:IsA("BodyGyro") and v.Name == "FlyGyro" then v:Destroy() end
+            end
+        end
+        if flyConnection then
+            flyConnection:Disconnect()
+            flyConnection = nil
+        end
+        if mobileFlyGui then
+            mobileFlyGui.Enabled = false
+        end
+    end
+    
+    createToggle(content, "Fly", 15, settings.fly, function(enabled)
+        flyEnabled = enabled
         if enabled then
-            if fullbrightConnection then fullbrightConnection:Disconnect() end
-            game.Lighting.Brightness = 2
-            game.Lighting.ClockTime = 14
-            game.Lighting.FogEnd = 999999
-            game.Lighting.GlobalShadows = false
-            game.Lighting.OutdoorAmbient = Color3.fromRGB(255, 255, 255)
-            game.Lighting.Ambient = Color3.fromRGB(255, 255, 255)
-            game.Lighting.ExposureCompensation = 0.5
-            fullbrightConnection = runService.Heartbeat:Connect(function()
-                if not fullbrightEnabled then fullbrightConnection:Disconnect(); return end
-                game.Lighting.Brightness = 2
-                game.Lighting.ClockTime = 14
-                game.Lighting.FogEnd = 999999
+            if UIS.TouchEnabled and not mobileFlyGui then createMobileFlyUI() end
+            if mobileFlyGui then mobileFlyGui.Enabled = true end
+            if player.Character then
+                local bodyGyro, bodyVelocity = setupFly(player.Character)
+                if flyConnection then flyConnection:Disconnect() end
+                flyConnection = runService.Heartbeat:Connect(function()
+                    if not flyEnabled then cleanupFly(); return end
+                    if not bodyVelocity or not bodyVelocity.Parent or not bodyGyro or not bodyGyro.Parent then return end
+                    bodyGyro.CFrame = workspace.CurrentCamera.CFrame
+                    local moveVector = Vector3.zero
+                    if UIS.TouchEnabled then
+                        if mobileInput.forward then moveVector += workspace.CurrentCamera.CFrame.LookVector end
+                        if mobileInput.back then moveVector -= workspace.CurrentCamera.CFrame.LookVector end
+                        if mobileInput.left then moveVector -= workspace.CurrentCamera.CFrame.RightVector end
+                        if mobileInput.right then moveVector += workspace.CurrentCamera.CFrame.RightVector end
+                        if mobileInput.up then moveVector += Vector3.new(0, 1, 0) end
+                        if mobileInput.down then moveVector -= Vector3.new(0, 1, 0) end
+                    else
+                        if UIS:IsKeyDown(Enum.KeyCode.W) then moveVector += workspace.CurrentCamera.CFrame.LookVector end
+                        if UIS:IsKeyDown(Enum.KeyCode.S) then moveVector -= workspace.CurrentCamera.CFrame.LookVector end
+                        if UIS:IsKeyDown(Enum.KeyCode.A) then moveVector -= workspace.CurrentCamera.CFrame.RightVector end
+                        if UIS:IsKeyDown(Enum.KeyCode.D) then moveVector += workspace.CurrentCamera.CFrame.RightVector end
+                        if UIS:IsKeyDown(Enum.KeyCode.Space) then moveVector += Vector3.new(0, 1, 0) end
+                        if UIS:IsKeyDown(Enum.KeyCode.LeftShift) then moveVector -= Vector3.new(0, 1, 0) end
+                    end
+                    bodyVelocity.Velocity = moveVector * 50
+                end)
+            end
+        else
+            cleanupFly()
+        end
+    end, "fly")
+    
+    player.CharacterAdded:Connect(function(character)
+        local humanoid = character:WaitForChild("Humanoid")
+        humanoid.WalkSpeed = settings.speed
+        if flyEnabled then
+            task.wait(0.1)
+            cleanupFly()
+            if UIS.TouchEnabled and not mobileFlyGui then createMobileFlyUI() end
+            if mobileFlyGui then mobileFlyGui.Enabled = true end
+            local bodyGyro, bodyVelocity = setupFly(character)
+            if flyConnection then flyConnection:Disconnect() end
+            flyConnection = runService.Heartbeat:Connect(function()
+                if not flyEnabled then cleanupFly(); return end
+                if not bodyVelocity or not bodyVelocity.Parent or not bodyGyro or not bodyGyro.Parent then return end                bodyGyro.CFrame = workspace.CurrentCamera.CFrame
+                local moveVector = Vector3.zero
+                if UIS.TouchEnabled then
+                    if mobileInput.forward then moveVector += workspace.CurrentCamera.CFrame.LookVector end
+                    if mobileInput.back then moveVector -= workspace.CurrentCamera.CFrame.LookVector end
+                    if mobileInput.left then moveVector -= workspace.CurrentCamera.CFrame.RightVector end
+                    if mobileInput.right then moveVector += workspace.CurrentCamera.CFrame.RightVector end
+                    if mobileInput.up then moveVector += Vector3.new(0, 1, 0) end
+                    if mobileInput.down then moveVector -= Vector3.new(0, 1, 0) end
+                else
+                    if UIS:IsKeyDown(Enum.KeyCode.W) then moveVector += workspace.CurrentCamera.CFrame.LookVector end
+                    if UIS:IsKeyDown(Enum.KeyCode.S) then moveVector -= workspace.CurrentCamera.CFrame.LookVector end
+                    if UIS:IsKeyDown(Enum.KeyCode.A) then moveVector -= workspace.CurrentCamera.CFrame.RightVector end
+                    if UIS:IsKeyDown(Enum.KeyCode.D) then moveVector += workspace.CurrentCamera.CFrame.RightVector end
+                    if UIS:IsKeyDown(Enum.KeyCode.Space) then moveVector += Vector3.new(0, 1, 0) end
+                    if UIS:IsKeyDown(Enum.KeyCode.LeftShift) then moveVector -= Vector3.new(0, 1, 0) end
+                end
+                bodyVelocity.Velocity = moveVector * 50
+            end)
+        end
+        if noclipEnabled then applyNoclip() end
+    end)
+    
+    local noclipEnabled = settings.noclip
+    local noclipConnection = nil
+    
+    local function applyNoclip()
+        if player.Character then
+            for _, part in pairs(player.Character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                end
+            end
+        end
+    end
+    
+    local function removeNoclip()
+        if player.Character then
+            for _, part in pairs(player.Character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = true
+                end
+            end
+        end
+    end
+    
+    createToggle(content, "Noclip", 50, settings.noclip, function(enabled)
+        noclipEnabled = enabled
+        if enabled then
+            applyNoclip()
+            if noclipConnection then noclipConnection:Disconnect() end
+            noclipConnection = runService.Stepped:Connect(function()
+                if noclipEnabled then applyNoclip() end
             end)
         else
-            if fullbrightConnection then fullbrightConnection:Disconnect(); fullbrightConnection = nil end
-            game.Lighting.Brightness = 1
-            game.Lighting.OutdoorAmbient = Color3.fromRGB(127, 127, 127)
-            game.Lighting.Ambient = Color3.fromRGB(0, 0, 0)
-            game.Lighting.ExposureCompensation = 0
+            if noclipConnection then
+                noclipConnection:Disconnect()
+                noclipConnection = nil
+            end
+            removeNoclip()
         end
-    end, "fullbright")
+    end, "noclip")
     
-    createToggle(content, "Optimization", 50, settings.optimization, function(enabled)
-        if enabled then
-            game.Lighting.GlobalShadows = false
-            game.Lighting.ShadowSoftness = 0
-        else
-            game.Lighting.GlobalShadows = true
-            game.Lighting.ShadowSoftness = 0.5
+    createSlider(content, "Speed", 85, 16, 200, settings.speed, function(value)
+        if player.Character and player.Character:FindFirstChild("Humanoid") then
+            player.Character.Humanoid.WalkSpeed = value
         end
-    end, "optimization")
+    end, "speed")
     
-    local fpsOverlay = Instance.new("TextLabel", gui)
-    fpsOverlay.Size = UDim2.new(0, 80, 0, 25)
-    fpsOverlay.Position = UDim2.new(settings.fpsPos[1], settings.fpsPos[2], settings.fpsPos[3], settings.fpsPos[4])
-    fpsOverlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    fpsOverlay.BackgroundTransparency = 0.5
-    fpsOverlay.BorderSizePixel = 0
-    fpsOverlay.Text = "FPS: 0"
-    fpsOverlay.TextColor3 = Color3.fromRGB(255, 255, 255)
-    fpsOverlay.TextSize = 14
-    fpsOverlay.Font = Enum.Font.GothamBold
-    fpsOverlay.TextXAlignment = Enum.TextXAlignment.Center
-    fpsOverlay.Visible = settings.fps
-    fpsOverlay.ZIndex = 10
-    Instance.new("UICorner", fpsOverlay).CornerRadius = UDim.new(0, 6)
-
-    local fpsDragging = false
-    local fpsDragStart = nil
-    local fpsStartPos = nil
-
-    fpsOverlay.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            fpsDragging = true
-            fpsDragStart = input.Position
-            fpsStartPos = fpsOverlay.Position
-            fpsOverlay.BackgroundTransparency = 0.3
-        end
-    end)
-
-    UIS.InputChanged:Connect(function(input)
-        if not fpsDragging then return end
-        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-            local delta = input.Position - fpsDragStart
-            local newX = fpsStartPos.X.Offset + delta.X
-            local newY = fpsStartPos.Y.Offset + delta.Y
-            local screenSize = workspace.CurrentCamera.ViewportSize
-            newX = math.clamp(newX, 0, screenSize.X - fpsOverlay.AbsoluteSize.X)
-            newY = math.clamp(newY, 0, screenSize.Y - fpsOverlay.AbsoluteSize.Y)
-            fpsOverlay.Position = UDim2.new(0, newX, 0, newY)
-        end
-    end)
-
-    UIS.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            fpsDragging = false
-            fpsOverlay.BackgroundTransparency = 0.5
-            saveSetting("fpsPos", {fpsOverlay.Position.X.Scale, fpsOverlay.Position.X.Offset, fpsOverlay.Position.Y.Scale, fpsOverlay.Position.Y.Offset})
-        end
-    end)
-
-    local lastFpsUpdate = 0
-    local fpsValue = 0
-    local frameCount = 0
-
-    runService.RenderStepped:Connect(function(deltaTime)
-        frameCount = frameCount + 1
-        lastFpsUpdate = lastFpsUpdate + deltaTime
-        if lastFpsUpdate >= 1 then
-            fpsValue = math.floor(frameCount / lastFpsUpdate + 0.5)
-            if fpsOverlay and fpsOverlay.Parent then
-                fpsOverlay.Text = "FPS: " .. fpsValue
-            end
-            frameCount = 0
-            lastFpsUpdate = 0
-        end
-    end)
-
-    createToggle(content, "FPS", 85, settings.fps, function(enabled)
-        fpsOverlay.Visible = enabled
-    end, "fps")
+    local targetPlayerEnabled = settings.targetPlayer
+    local targetPlayerConnection = nil
     
-    local minimapEnabled = settings.minimap
-    local minimapNicknames = settings.minimapNicknames
-    local minimapDistance = settings.minimapDistance
-    local minimapZoom = settings.minimapZoom
-    local minimapRotate = settings.minimapRotate
-    local minimapTrail = settings.minimapTrail
-    local minimapDanger = settings.minimapDanger
-
-    local minimapFrame = Instance.new("Frame", gui)
-    minimapFrame.Size = UDim2.new(0, 150, 0, 150)
-    minimapFrame.Position = UDim2.new(settings.minimapPos[1], settings.minimapPos[2], settings.minimapPos[3], settings.minimapPos[4])
-    minimapFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    minimapFrame.BackgroundTransparency = 0.3
-    minimapFrame.BorderSizePixel = 0
-    minimapFrame.Visible = settings.minimap
-    minimapFrame.ZIndex = 100
-    minimapFrame.ClipsDescendants = true
-    Instance.new("UICorner", minimapFrame).CornerRadius = UDim.new(1, 0)
-    local minimapStroke = Instance.new("UIStroke", minimapFrame)
-    minimapStroke.Color = Color3.fromRGB(100, 100, 100)
-    minimapStroke.Thickness = 2
-
-    local minimapDragging = false
-    local minimapDragStart = nil
-    local minimapStartPos = nil
-
-    minimapFrame.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            minimapDragging = true
-            minimapDragStart = input.Position
-            minimapStartPos = minimapFrame.Position
-        end
-    end)
-
-    UIS.InputChanged:Connect(function(input)
-        if not minimapDragging then return end
-        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-            local delta = input.Position - minimapDragStart
-            local newX = minimapStartPos.X.Offset + delta.X
-            local newY = minimapStartPos.Y.Offset + delta.Y
-            local screenSize = workspace.CurrentCamera.ViewportSize
-            newX = math.clamp(newX, 0, screenSize.X - minimapFrame.AbsoluteSize.X)
-            newY = math.clamp(newY, 0, screenSize.Y - minimapFrame.AbsoluteSize.Y)
-            minimapFrame.Position = UDim2.new(0, newX, 0, newY)
-        end
-    end)
-
-    UIS.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            minimapDragging = false
-            saveSetting("minimapPos", {minimapFrame.Position.X.Scale, minimapFrame.Position.X.Offset, minimapFrame.Position.Y.Scale, minimapFrame.Position.Y.Offset})
-        end
-    end)
-
-    local zoomOutBtn = Instance.new("TextButton", minimapFrame)
-    zoomOutBtn.Size = UDim2.new(0, 20, 0, 20)
-    zoomOutBtn.Position = UDim2.new(0, 2, 0, 2)
-    zoomOutBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    zoomOutBtn.BackgroundTransparency = 0.5
-    zoomOutBtn.BorderSizePixel = 0
-    zoomOutBtn.Text = "-"
-    zoomOutBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    zoomOutBtn.TextSize = 16
-    zoomOutBtn.Font = Enum.Font.GothamBold
-    zoomOutBtn.ZIndex = 102
-    Instance.new("UICorner", zoomOutBtn).CornerRadius = UDim.new(0, 4)
-
-    local zoomInBtn = Instance.new("TextButton", minimapFrame)
-    zoomInBtn.Size = UDim2.new(0, 20, 0, 20)
-    zoomInBtn.Position = UDim2.new(1, -22, 0, 2)
-    zoomInBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    zoomInBtn.BackgroundTransparency = 0.5
-    zoomInBtn.BorderSizePixel = 0
-    zoomInBtn.Text = "+"
-    zoomInBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    zoomInBtn.TextSize = 16
-    zoomInBtn.Font = Enum.Font.GothamBold
-    zoomInBtn.ZIndex = 102
-    Instance.new("UICorner", zoomInBtn).CornerRadius = UDim.new(0, 4)
-
-    zoomOutBtn.Activated:Connect(function()
-        minimapZoom = math.max(0.1, minimapZoom - 0.1)
-        settings.minimapZoom = minimapZoom
-        saveSetting("minimapZoom", minimapZoom)
-    end)
-
-    zoomInBtn.Activated:Connect(function()
-        minimapZoom = math.min(2, minimapZoom + 0.1)
-        settings.minimapZoom = minimapZoom
-        saveSetting("minimapZoom", minimapZoom)
-    end)
-
-    local nLabel = Instance.new("TextLabel", minimapFrame)
-    nLabel.Size = UDim2.new(0, 15, 0, 15)
-    nLabel.Position = UDim2.new(0.5, -7, 0, 2)
-    nLabel.BackgroundTransparency = 1
-    nLabel.Text = "N"
-    nLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    nLabel.TextSize = 14
-    nLabel.Font = Enum.Font.GothamBold
-    nLabel.ZIndex = 102
-
-    local sLabel = Instance.new("TextLabel", minimapFrame)
-    sLabel.Size = UDim2.new(0, 15, 0, 15)
-    sLabel.Position = UDim2.new(0.5, -7, 1, -17)
-    sLabel.BackgroundTransparency = 1
-    sLabel.Text = "S"
-    sLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    sLabel.TextSize = 14
-    sLabel.Font = Enum.Font.GothamBold
-    sLabel.ZIndex = 102
-
-    local wLabel = Instance.new("TextLabel", minimapFrame)
-    wLabel.Size = UDim2.new(0, 15, 0, 15)
-    wLabel.Position = UDim2.new(0, 2, 0.5, -7)
-    wLabel.BackgroundTransparency = 1
-    wLabel.Text = "W"
-    wLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    wLabel.TextSize = 14
-    wLabel.Font = Enum.Font.GothamBold
-    wLabel.ZIndex = 102
-
-    local eLabel = Instance.new("TextLabel", minimapFrame)
-    eLabel.Size = UDim2.new(0, 15, 0, 15)
-    eLabel.Position = UDim2.new(1, -17, 0.5, -7)
-    eLabel.BackgroundTransparency = 1
-    eLabel.Text = "E"
-    eLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    eLabel.TextSize = 14
-    eLabel.Font = Enum.Font.GothamBold
-    eLabel.ZIndex = 102
-
-    local containerFrame = Instance.new("Frame", minimapFrame)
-    containerFrame.Size = UDim2.new(1, 0, 1, 0)
-    containerFrame.BackgroundTransparency = 1
-    containerFrame.ZIndex = 101
-
-    local myDot = Instance.new("Frame", minimapFrame)
-    myDot.Size = UDim2.new(0, 8, 0, 8)
-    myDot.Position = UDim2.new(0.5, -4, 0.5, -4)
-    myDot.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
-    myDot.BorderSizePixel = 0
-    myDot.ZIndex = 103
-    Instance.new("UICorner", myDot).CornerRadius = UDim.new(1, 0)
-    myDot.Visible = false
-
-    local directionLine = Instance.new("Frame", minimapFrame)
-    directionLine.Size = UDim2.new(0, 15, 0, 2)
-    directionLine.Position = UDim2.new(0.5, -3, 0.5, -1)
-    directionLine.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
-    directionLine.BorderSizePixel = 0
-    directionLine.ZIndex = 103
-    directionLine.AnchorPoint = Vector2.new(0, 0.5)
-    directionLine.Visible = false
-
-    local trailDots = {}
-    local trailPositions = {}
-    local dangerDots = {}
-    local minimapPlayerDots = {}
-    local minimapNpcDots = {}
-
-    local function clearTrail()
-        for _, dot in pairs(trailDots) do
-            dot:Destroy()
-        end
-        trailDots = {}
-        trailPositions = {}
-    end
-
-    local function clearDanger()
-        for _, dot in pairs(dangerDots) do
-            dot:Destroy()
-        end
-        dangerDots = {}
-    end
-
-    runService.RenderStepped:Connect(function()
-        if not minimapEnabled then
-            myDot.Visible = false
-            directionLine.Visible = false
-            nLabel.Visible = false
-            sLabel.Visible = false
-            wLabel.Visible = false
-            eLabel.Visible = false
-            for _, data in pairs(minimapPlayerDots) do
-                data.dot.Visible = false
-                if data.label then data.label.Visible = false end
-            end
-            for _, dot in pairs(minimapNpcDots) do
-                dot.Visible = false
-            end
-            for _, dot in pairs(trailDots) do
-                dot.Visible = false
-            end
-            for _, dot in pairs(dangerDots) do
-                dot.Visible = false
-            end
-            return
-        end
-        
-        myDot.Visible = true
-        directionLine.Visible = true
-        nLabel.Visible = true
-        sLabel.Visible = true
-        wLabel.Visible = true
-        eLabel.Visible = true
-        
-        if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return end
-        
+    local function findNearestPlayer()
+        if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return nil end
         local myPos = player.Character.HumanoidRootPart.Position
-        local mapSize = 150
-        local cameraRotation = 0
-        
-        if minimapRotate then
-            local lookVector = workspace.CurrentCamera.CFrame.LookVector
-            cameraRotation = -math.deg(math.atan2(lookVector.X, lookVector.Z))
-            containerFrame.Rotation = cameraRotation
-        else
-            containerFrame.Rotation = 0
-        end
-        
-        local lookVector = player.Character.HumanoidRootPart.CFrame.LookVector
-        local angle = math.atan2(lookVector.X, lookVector.Z)
-        directionLine.Rotation = math.deg(angle) + 180
-        
-        if minimapTrail then
-            table.insert(trailPositions, myPos)
-            if #trailPositions > 20 then
-                table.remove(trailPositions, 1)
-            end
-            while #trailDots < #trailPositions do
-                local dot = Instance.new("Frame", minimapFrame)
-                dot.Size = UDim2.new(0, 3, 0, 3)
-                dot.BackgroundColor3 = Color3.fromRGB(100, 255, 100)
-                dot.BackgroundTransparency = 0.5
-                dot.BorderSizePixel = 0
-                dot.ZIndex = 98
-                Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
-                table.insert(trailDots, dot)
-            end
-            while #trailDots > #trailPositions do
-                local dot = table.remove(trailDots)
-                dot:Destroy()
-            end
-            for i, pos in ipairs(trailPositions) do
-                local relative = pos - myPos
-                local dotX = (relative.X * minimapZoom) + mapSize/2 - 1.5
-                local dotZ = (relative.Z * minimapZoom) + mapSize/2 - 1.5
-                if minimapRotate then
-                    local rad = math.rad(cameraRotation)
-                    local rotatedX = (dotX - mapSize/2) * math.cos(rad) - (dotZ - mapSize/2) * math.sin(rad) + mapSize/2
-                    local rotatedZ = (dotX - mapSize/2) * math.sin(rad) + (dotZ - mapSize/2) * math.cos(rad) + mapSize/2
-                    dotX, dotZ = rotatedX, rotatedZ
-                end
-                dotX = math.clamp(dotX, -3, mapSize)
-                dotZ = math.clamp(dotZ, -3, mapSize)
-                trailDots[i].Position = UDim2.new(0, dotX, 0, dotZ)
-                trailDots[i].Visible = true
-                trailDots[i].BackgroundTransparency = 0.5 - (i / #trailPositions) * 0.4
-            end
-        else
-            clearTrail()
-        end
-        
-        if minimapDanger then
-            local dangerZones = {}
-            if _G.AI and _G.AI.DangerZones then
-                for _, zone in pairs(_G.AI.DangerZones) do
-                    table.insert(dangerZones, zone.Pos)
-                end
-            end
-            for i, pos in ipairs(dangerZones) do
-                local dot = dangerDots[i]
-                if not dot then
-                    dot = Instance.new("Frame", minimapFrame)
-                    dot.Size = UDim2.new(0, 12, 0, 12)
-                    dot.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
-                    dot.BackgroundTransparency = 0.5
-                    dot.BorderSizePixel = 0
-                    dot.ZIndex = 99
-                    Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
-                    dangerDots[i] = dot
-                end
-                local relative = pos - myPos
-                local dotX = (relative.X * minimapZoom) + mapSize/2 - 6
-                local dotZ = (relative.Z * minimapZoom) + mapSize/2 - 6
-                if minimapRotate then
-                    local rad = math.rad(cameraRotation)
-                    local rotatedX = (dotX - mapSize/2) * math.cos(rad) - (dotZ - mapSize/2) * math.sin(rad) + mapSize/2
-                    local rotatedZ = (dotX - mapSize/2) * math.sin(rad) + (dotZ - mapSize/2) * math.cos(rad) + mapSize/2
-                    dotX, dotZ = rotatedX, rotatedZ
-                end
-                dotX = math.clamp(dotX, -6, mapSize - 6)
-                dotZ = math.clamp(dotZ, -6, mapSize - 6)
-                dot.Position = UDim2.new(0, dotX, 0, dotZ)
-                dot.Visible = true
-            end
-        else
-            clearDanger()
-        end
-        
+        local nearest = nil
+        local minDist = math.huge
         for _, target in pairs(game.Players:GetPlayers()) do
-            if target ~= player and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
-                if not minimapPlayerDots[target.UserId] then
-                    local dot = Instance.new("Frame", containerFrame)
-                    dot.Size = UDim2.new(0, 4, 0, 4)
-                    dot.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-                    dot.BorderSizePixel = 0
-                    dot.ZIndex = 101
-                    Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
-                    
-                    local nameLabel = Instance.new("TextLabel", containerFrame)
-                    nameLabel.Size = UDim2.new(0, 60, 0, 14)
-                    nameLabel.BackgroundTransparency = 0.5
-                    nameLabel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-                    nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-                    nameLabel.TextSize = 10
-                    nameLabel.Font = Enum.Font.Gotham
-                    nameLabel.Visible = false
-                    nameLabel.ZIndex = 102
-                    Instance.new("UICorner", nameLabel).CornerRadius = UDim.new(0, 3)
-                    
-                    minimapPlayerDots[target.UserId] = {dot = dot, label = nameLabel}
-                end
-                
-                local data = minimapPlayerDots[target.UserId]
-                local dot = data.dot
-                local nameLabel = data.label
-                dot.Visible = true
-                
-                local targetPos = target.Character.HumanoidRootPart.Position
-                local relative = targetPos - myPos
-                
-                local dotX = (relative.X * minimapZoom) + mapSize/2 - 2
-                local dotZ = (relative.Z * minimapZoom) + mapSize/2 - 2
-                
-                if minimapRotate then
-                    local rad = math.rad(cameraRotation)
-                    local rotatedX = (dotX - mapSize/2) * math.cos(rad) - (dotZ - mapSize/2) * math.sin(rad) + mapSize/2
-                    local rotatedZ = (dotX - mapSize/2) * math.sin(rad) + (dotZ - mapSize/2) * math.cos(rad) + mapSize/2
-                    dotX, dotZ = rotatedX, rotatedZ
-                end
-                
-                dotX = math.clamp(dotX, -4, mapSize)
-                dotZ = math.clamp(dotZ, -4, mapSize)
-                
-                dot.Position = UDim2.new(0, dotX, 0, dotZ)
-                
-                if minimapNicknames or minimapDistance then
-                    nameLabel.Visible = true
-                    local text = ""
-                    if minimapNicknames then text = text .. target.Name end
-                    if minimapDistance then
-                        local dist = math.floor(relative.Magnitude)
-                        if minimapNicknames then text = text .. " | " end
-                        text = text .. dist .. "m"
-                    end
-                    nameLabel.Text = text
-                    if dotZ > mapSize/2 then
-                        nameLabel.Position = UDim2.new(0, -28, 0, -16)
-                    else
-                        nameLabel.Position = UDim2.new(0, -28, 1, 2)
-                    end
-                else
-                    nameLabel.Visible = false
-                end
-            else
-                if minimapPlayerDots[target.UserId] then
-                    minimapPlayerDots[target.UserId].dot.Visible = false
-                    minimapPlayerDots[target.UserId].label.Visible = false
+            if target ~= player and target.Character and target.Character:FindFirstChild("HumanoidRootPart") and target.Character:FindFirstChild("Humanoid") and target.Character.Humanoid.Health > 0 then
+                local dist = (target.Character.HumanoidRootPart.Position - myPos).Magnitude
+                if dist < minDist then
+                    minDist = dist
+                    nearest = target
                 end
             end
         end
-        
-        if settings.esp and settings.espNpc then
-            for _, obj in pairs(workspace:GetDescendants()) do
-                if obj:IsA("Model") and obj:FindFirstChild("Humanoid") and obj:FindFirstChild("Head") and obj:FindFirstChild("HumanoidRootPart") then
-                    local isPlayerCharacter = false
-                    for _, plr in pairs(game.Players:GetPlayers()) do
-                        if plr.Character == obj then isPlayerCharacter = true; break end
+        return nearest
+    end
+    
+    createToggle(content, "Target Player", 120, settings.targetPlayer, function(enabled)
+        targetPlayerEnabled = enabled
+        if enabled then
+            if targetPlayerConnection then targetPlayerConnection:Disconnect() end
+            targetPlayerConnection = runService.Heartbeat:Connect(function()
+                if not targetPlayerEnabled then
+                    if targetPlayerConnection then targetPlayerConnection:Disconnect() end
+                    return
+                end
+                local target = findNearestPlayer()
+                if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+                    local humanoid = player.Character and player.Character:FindFirstChild("Humanoid")
+                    if humanoid then
+                        humanoid:MoveTo(target.Character.HumanoidRootPart.Position)
                     end
-                    if not isPlayerCharacter then
-                        local npcId = obj.Name
-                        if not minimapNpcDots[npcId] then
-                            local dot = Instance.new("Frame", containerFrame)
-                            dot.Size = UDim2.new(0, 4, 0, 4)
-                            dot.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
-                            dot.BorderSizePixel = 0
-                            dot.ZIndex = 101
-                            Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
-                            minimapNpcDots[npcId] = dot
-                        end
-                        
-                        local dot = minimapNpcDots[npcId]
-                        dot.Visible = true
-                        
-                        local targetPos = obj.HumanoidRootPart.Position
-                        local relative = targetPos - myPos
-                        
-                        local dotX = (relative.X * minimapZoom) + mapSize/2 - 2
-                        local dotZ = (relative.Z * minimapZoom) + mapSize/2 - 2
-                        
-                        if minimapRotate then
-                            local rad = math.rad(cameraRotation)
-                            local rotatedX = (dotX - mapSize/2) * math.cos(rad) - (dotZ - mapSize/2) * math.sin(rad) + mapSize/2
-                            local rotatedZ = (dotX - mapSize/2) * math.sin(rad) + (dotZ - mapSize/2) * math.cos(rad) + mapSize/2
-                            dotX, dotZ = rotatedX, rotatedZ
-                        end
-                        
-                        dotX = math.clamp(dotX, -4, mapSize)
-                        dotZ = math.clamp(dotZ, -4, mapSize)
-                        
-                        dot.Position = UDim2.new(0, dotX, 0, dotZ)
+                end
+            end)
+        else
+            if targetPlayerConnection then
+                targetPlayerConnection:Disconnect()
+                targetPlayerConnection = nil
+            end
+        end
+    end, "targetPlayer")
+    
+    local hitboxEnabled = settings.hitbox
+    local hitboxSize = settings.hitboxSize
+    local hitboxParts = {}
+    
+    local function applyHitbox()
+        local sizeMultiplier = hitboxSize / 5
+        for _, target in pairs(game.Players:GetPlayers()) do
+            if target ~= player and target.Character then
+                local head = target.Character:FindFirstChild("Head")
+                if head then
+                    local headHitbox = head:FindFirstChild("DeltaHitbox_Head")
+                    if not headHitbox then
+                        headHitbox = Instance.new("Part")
+                        headHitbox.Name = "DeltaHitbox_Head"
+                        headHitbox.Size = Vector3.new(2, 2, 2)
+                        headHitbox.Transparency = 1
+                        headHitbox.CanCollide = true
+                        headHitbox.Anchored = false
+                        headHitbox.Massless = true
+                        headHitbox.Parent = target.Character
+                        local weld = Instance.new("WeldConstraint")
+                        weld.Part0 = headHitbox
+                        weld.Part1 = head
+                        weld.Parent = headHitbox
                     end
+                    headHitbox.Size = Vector3.new(2 * sizeMultiplier, 2 * sizeMultiplier, 2 * sizeMultiplier)
+                    table.insert(hitboxParts, headHitbox)
+                end
+                local torso = target.Character:FindFirstChild("UpperTorso") or target.Character:FindFirstChild("Torso")
+                if torso then
+                    local torsoHitbox = torso:FindFirstChild("DeltaHitbox_Torso")
+                    if not torsoHitbox then
+                        torsoHitbox = Instance.new("Part")
+                        torsoHitbox.Name = "DeltaHitbox_Torso"
+                        torsoHitbox.Size = Vector3.new(2, 2, 2)
+                        torsoHitbox.Transparency = 1
+                        torsoHitbox.CanCollide = true
+                        torsoHitbox.Anchored = false
+                        torsoHitbox.Massless = true
+                        torsoHitbox.Parent = target.Character
+                        local weld = Instance.new("WeldConstraint")
+                        weld.Part0 = torsoHitbox
+                        weld.Part1 = torso
+                        weld.Parent = torsoHitbox
+                    end
+                    torsoHitbox.Size = Vector3.new(2 * sizeMultiplier, 2 * sizeMultiplier, 2 * sizeMultiplier)
+                    table.insert(hitboxParts, torsoHitbox)
                 end
             end
         end
-    end)
-
-    createToggle(content, "Minimap", 120, settings.minimap, function(enabled)
-        minimapEnabled = enabled
-        minimapFrame.Visible = enabled
-    end, "minimap")
-
-    createToggle(content, "Minimap Nicknames", 155, settings.minimapNicknames, function(enabled)
-        minimapNicknames = enabled
-    end, "minimapNicknames")
-
-    createToggle(content, "Minimap Distance", 190, settings.minimapDistance, function(enabled)
-        minimapDistance = enabled
-    end, "minimapDistance")
-
-    createToggle(content, "Minimap Rotate", 225, settings.minimapRotate, function(enabled)
-        minimapRotate = enabled
-    end, "minimapRotate")
-
-    createToggle(content, "Minimap Trail", 260, settings.minimapTrail, function(enabled)
-        minimapTrail = enabled
-        if not enabled then clearTrail() end
-    end, "minimapTrail")
-
-    createToggle(content, "Minimap Danger", 295, settings.minimapDanger, function(enabled)
-        minimapDanger = enabled
-        if not enabled then clearDanger() end
-    end, "minimapDanger")
+    end
+    
+    local function removeHitbox()
+        for _, part in ipairs(hitboxParts) do
+            if part and part.Parent then
+                part:Destroy()
+            end
+        end
+        hitboxParts = {}
+    end
+    
+    createToggle(content, "Hitbox", 155, settings.hitbox, function(enabled)
+        hitboxEnabled = enabled
+        if enabled then
+            applyHitbox()
+        else
+            removeHitbox()
+        end
+    end, "hitbox")
+    
+    createSlider(content, "Hitbox Size", 190, 1, 10, settings.hitboxSize, function(value)
+        hitboxSize = value
+        if hitboxEnabled then
+            removeHitbox()
+            applyHitbox()
+        end
+    end, "hitboxSize")
 end
